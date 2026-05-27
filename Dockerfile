@@ -1,17 +1,24 @@
 # Fabric All-in-One Docker Image
-# UI + API + MCP 三模式支持
+# UI + API + MCP three-mode support
 
 # Stage 1: Build Go binary
 FROM golang:1.24-alpine AS go-builder
 
 WORKDIR /src
-RUN apk add --no-cache git
+
+# Install build dependencies (gcc/musl-dev for CGo — required by mattn/go-sqlite3)
+RUN apk add --no-cache git gcc musl-dev
+
+# Set Go module proxy for reliable downloads in CI
+ENV GOPROXY=https://proxy.golang.org,direct
+# Allow Go to auto-download the toolchain required by go.mod (go 1.25.1)
+ENV GOTOOLCHAIN=auto
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /fabric ./cmd/fabric
+RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o /fabric ./cmd/fabric
 
 # Stage 2: Build Web UI
 FROM node:20-alpine AS web-builder
@@ -44,21 +51,20 @@ LABEL maintainer="neosun"
 
 # Install runtime dependencies including Node.js
 RUN apk add --no-cache \
-    ca-certificates \
-    yt-dlp \
+    curl \
+    nodejs \
+    npm \
     python3 \
     py3-pip \
     supervisor \
-    curl \
+    bash \
+    ca-certificates \
     tzdata \
-    nodejs \
-    npm \
     && mkdir -p /root/.config/fabric /app /var/log/supervisor /tmp/fabric /app/web
 
 # Install Python dependencies for MCP
 RUN pip3 install --break-system-packages --no-cache-dir \
-    fastapi \
-    uvicorn \
+    mcp \
     httpx \
     pydantic
 
